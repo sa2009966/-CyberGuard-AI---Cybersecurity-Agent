@@ -1,29 +1,160 @@
+'use client'
+
 /**
- * app/page.tsx — SOC-Style Dashboard (Server Component)
+ * app/page.tsx — SOC-Style Dashboard
  *
- * Reads live metrics from Upstash Redis at request time via getSocMetrics().
- * The health-check button is extracted to a Client Component so that the
- * rest of the page can remain a zero-JS Server Component.
+ * Fully self-contained: the HealthCheckButton client island lives here as a
+ * named component in the same file, eliminating the cross-file resolution race
+ * that caused "Module not found: Can't resolve './HealthCheckButton'" during
+ * Turbopack's incremental compilation.
+ *
+ * Metrics (threatsBlocked, activeSessions) are fetched client-side from
+ * /api/health so the page stays dynamic without requiring a Server Component
+ * boundary split across files.
  */
 
-import { Shield, AlertTriangle, Activity, Users, Zap, MessageSquare, ExternalLink } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import {
+  Shield,
+  AlertTriangle,
+  Activity,
+  Users,
+  Zap,
+  MessageSquare,
+  ExternalLink,
+  CheckCircle,
+  RefreshCw,
+} from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { getSocMetrics } from '@/src/core/sessionStore'
-import { isPlatformConfigured } from '@/src/config/env'
-import HealthCheckButton from './HealthCheckButton'
+import { Button } from '@/components/ui/button'
 
-// ─── Server Component ─────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-export default async function HomePage() {
-  // Read live Redis metrics — happens server-side, no client bundle cost
-  const metrics = await getSocMetrics().catch(() => ({
-    threatsBlocked: 0,
-    activeSessions: 0,
-  }))
+interface HealthData {
+  status: string
+  uptime: number
+  metrics: {
+    threatsBlocked: number
+    activeSessions: number
+  }
+  platforms: Record<string, { configured: boolean; status: string }>
+}
 
-  const discordReady = isPlatformConfigured('discord')
-  const slackReady   = isPlatformConfigured('slack')
+// ─── HealthCheckButton — inline client island ─────────────────────────────────
+
+function HealthCheckButton({
+  onData,
+}: {
+  onData: (data: HealthData) => void
+}) {
+  const [loading, setLoading] = useState(false)
+  const [error, setError]     = useState<string | null>(null)
+  const [result, setResult]   = useState<HealthData | null>(null)
+
+  const check = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res  = await fetch('/api/health')
+      const data = await res.json() as HealthData
+      setResult(data)
+      onData(data)
+    } catch {
+      setError('Health check request failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <Button
+        onClick={check}
+        disabled={loading}
+        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-mono text-xs tracking-widest uppercase"
+      >
+        {loading
+          ? <RefreshCw className="mr-2 h-3 w-3 animate-spin" />
+          : <Activity className="mr-2 h-3 w-3" />}
+        {loading ? 'Polling...' : 'Run Health Check'}
+      </Button>
+
+      {error && (
+        <p className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-xs text-red-400">
+          {error}
+        </p>
+      )}
+
+      {result && (
+        <div className="space-y-3 rounded-lg border border-slate-800 bg-slate-950/60 p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-slate-500 uppercase tracking-widest">Overall</span>
+            <Badge
+              variant="outline"
+              className={
+                result.status === 'healthy'
+                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                  : 'border-red-500/30 bg-red-500/10 text-red-400'
+              }
+            >
+              {result.status === 'healthy'
+                ? <CheckCircle className="mr-1 h-3 w-3 inline" />
+                : <AlertTriangle className="mr-1 h-3 w-3 inline" />}
+              {result.status.toUpperCase()}
+            </Badge>
+          </div>
+
+          <div className="space-y-2">
+            {Object.entries(result.platforms).map(([platform, info]) => (
+              <div
+                key={platform}
+                className="flex items-center justify-between rounded border border-slate-800 bg-slate-900 px-3 py-2"
+              >
+                <span className="text-xs font-medium capitalize text-white">{platform}</span>
+                <Badge
+                  variant="outline"
+                  className={
+                    info.configured
+                      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                      : 'border-slate-700 bg-slate-800 text-slate-500'
+                  }
+                >
+                  {info.status.replace('_', ' ').toUpperCase()}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
+export default function HomePage() {
+  const [metrics, setMetrics] = useState({ threatsBlocked: 0, activeSessions: 0 })
+  const [platforms, setPlatforms] = useState<Record<string, { configured: boolean; status: string }>>({})
+
+  // Auto-fetch on mount so KPIs populate immediately
+  useEffect(() => {
+    fetch('/api/health')
+      .then((r) => r.json())
+      .then((data: HealthData) => {
+        setMetrics(data.metrics ?? { threatsBlocked: 0, activeSessions: 0 })
+        setPlatforms(data.platforms ?? {})
+      })
+      .catch(() => null)
+  }, [])
+
+  const handleHealthData = (data: HealthData) => {
+    setMetrics(data.metrics ?? { threatsBlocked: 0, activeSessions: 0 })
+    setPlatforms(data.platforms ?? {})
+  }
+
+  const discordReady = platforms['discord']?.configured ?? false
+  const slackReady   = platforms['slack']?.configured   ?? false
 
   const statCards = [
     {
@@ -52,17 +183,9 @@ export default async function HomePage() {
     },
   ]
 
-  const platforms = [
-    {
-      name: 'Discord',
-      webhook: '/api/webhooks/discord',
-      configured: discordReady,
-    },
-    {
-      name: 'Slack',
-      webhook: '/api/webhooks/slack',
-      configured: slackReady,
-    },
+  const platformRows = [
+    { name: 'Discord', webhook: '/api/webhooks/discord', configured: discordReady },
+    { name: 'Slack',   webhook: '/api/webhooks/slack',   configured: slackReady   },
   ]
 
   const endpoints = [
@@ -75,7 +198,7 @@ export default async function HomePage() {
     <div className="min-h-screen bg-slate-950 font-mono text-slate-100">
 
       {/* ── Top bar ──────────────────────────────────────────────────── */}
-      <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur">
+      <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-10">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-3">
             <div className="rounded-lg bg-emerald-500/15 p-2">
@@ -106,7 +229,7 @@ export default async function HomePage() {
                 key={label}
                 className={`rounded-xl border ${border} ${bg} p-6 flex items-center gap-4`}
               >
-                <div className={`rounded-lg bg-slate-900/60 p-3`}>
+                <div className="rounded-lg bg-slate-900/60 p-3">
                   <Icon className={`h-6 w-6 ${accent}`} />
                 </div>
                 <div>
@@ -123,7 +246,6 @@ export default async function HomePage() {
         {/* ── Platform status + Health check ───────────────────────────── */}
         <section className="grid gap-6 lg:grid-cols-2">
 
-          {/* Platform status panel */}
           <Card className="border-slate-800 bg-slate-900/60">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-semibold uppercase tracking-widest text-slate-400">
@@ -131,27 +253,25 @@ export default async function HomePage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {platforms.map(({ name, webhook, configured }) => (
+              {platformRows.map(({ name, webhook, configured }) => (
                 <div
                   key={name}
                   className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/60 px-4 py-3"
                 >
                   <div className="flex items-center gap-3">
-                    <span
-                      className={`h-2 w-2 rounded-full ${configured ? 'bg-emerald-400' : 'bg-slate-600'}`}
-                    />
+                    <span className={`h-2 w-2 rounded-full ${configured ? 'bg-emerald-400' : 'bg-slate-600'}`} />
                     <div>
                       <p className="text-sm font-medium text-white">{name}</p>
                       <code className="text-xs text-slate-500">{webhook}</code>
                     </div>
                   </div>
                   <Badge
+                    variant="outline"
                     className={
                       configured
                         ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
                         : 'border-slate-700 bg-slate-800 text-slate-500'
                     }
-                    variant="outline"
                   >
                     {configured ? 'ACTIVE' : 'NOT CONFIGURED'}
                   </Badge>
@@ -160,23 +280,22 @@ export default async function HomePage() {
             </CardContent>
           </Card>
 
-          {/* Health check (client island) */}
           <Card className="border-slate-800 bg-slate-900/60">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-semibold uppercase tracking-widest text-slate-400">
                 System Health
               </CardTitle>
               <CardDescription className="text-slate-500 text-xs">
-                Polls /api/health for live platform state
+                Polls /api/health — updates KPIs above on each run
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <HealthCheckButton />
+              <HealthCheckButton onData={handleHealthData} />
             </CardContent>
           </Card>
         </section>
 
-        {/* ── Threat categories reference ───────────────────────────────── */}
+        {/* ── Detection coverage ───────────────────────────────────────── */}
         <section>
           <Card className="border-slate-800 bg-slate-900/60">
             <CardHeader className="pb-3">
@@ -190,14 +309,14 @@ export default async function HomePage() {
             <CardContent>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 {[
-                  { label: 'Phishing',        icon: AlertTriangle, color: 'text-red-400',    bg: 'bg-red-500/10'    },
-                  { label: 'Malware / C2',    icon: Zap,           color: 'text-orange-400', bg: 'bg-orange-500/10' },
-                  { label: 'Credential Theft',icon: Shield,        color: 'text-yellow-400', bg: 'bg-yellow-500/10' },
-                  { label: 'SQL / XSS Inject',icon: Activity,      color: 'text-purple-400', bg: 'bg-purple-500/10' },
-                  { label: 'Data Exfil',      icon: ExternalLink,  color: 'text-pink-400',   bg: 'bg-pink-500/10'   },
-                  { label: 'Reconnaissance',  icon: Users,         color: 'text-cyan-400',   bg: 'bg-cyan-500/10'   },
-                  { label: 'Suspicious URLs', icon: ExternalLink,  color: 'text-blue-400',   bg: 'bg-blue-500/10'   },
-                  { label: 'AI Chat Analysis',icon: MessageSquare, color: 'text-emerald-400',bg: 'bg-emerald-500/10'},
+                  { label: 'Phishing',          icon: AlertTriangle, color: 'text-red-400',    bg: 'bg-red-500/10'    },
+                  { label: 'Malware / C2',       icon: Zap,           color: 'text-orange-400', bg: 'bg-orange-500/10' },
+                  { label: 'Credential Theft',   icon: Shield,        color: 'text-yellow-400', bg: 'bg-yellow-500/10' },
+                  { label: 'SQL / XSS Inject',   icon: Activity,      color: 'text-purple-400', bg: 'bg-purple-500/10' },
+                  { label: 'Data Exfil',         icon: ExternalLink,  color: 'text-pink-400',   bg: 'bg-pink-500/10'   },
+                  { label: 'Reconnaissance',     icon: Users,         color: 'text-cyan-400',   bg: 'bg-cyan-500/10'   },
+                  { label: 'Suspicious URLs',    icon: ExternalLink,  color: 'text-blue-400',   bg: 'bg-blue-500/10'   },
+                  { label: 'AI Chat Analysis',   icon: MessageSquare, color: 'text-emerald-400',bg: 'bg-emerald-500/10'},
                 ].map(({ label, icon: Icon, color, bg }) => (
                   <div
                     key={label}
@@ -212,7 +331,7 @@ export default async function HomePage() {
           </Card>
         </section>
 
-        {/* ── API endpoints reference ───────────────────────────────────── */}
+        {/* ── Endpoint reference ───────────────────────────────────────── */}
         <section>
           <Card className="border-slate-800 bg-slate-900/60">
             <CardHeader className="pb-3">
@@ -245,7 +364,7 @@ export default async function HomePage() {
             <Shield className="h-4 w-4 text-emerald-600" />
             <span>CyberGuard AI — built with ChatSDK + Upstash Redis</span>
           </div>
-          <span>Metrics refresh on every page load</span>
+          <span>Metrics update on every health check</span>
         </div>
       </footer>
     </div>
