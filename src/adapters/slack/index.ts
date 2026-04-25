@@ -20,6 +20,7 @@ export function createSlackPlatformAdapter() {
 
   try {
     const env = getEnv()
+    if (!env) return null
 
     const config: SlackAdapterConfig = {
       botToken: env.SLACK_BOT_TOKEN,

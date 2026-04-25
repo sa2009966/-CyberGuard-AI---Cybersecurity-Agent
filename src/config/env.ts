@@ -27,50 +27,48 @@ const envSchema = z.object({
 export type Env = z.infer<typeof envSchema>
 
 /**
- * Validates environment variables and returns typed config
- * Throws descriptive errors if validation fails
+ * Validates environment variables and logs a structured warning.
+ * Returns the parsed data on success, or null on failure — never throws.
+ * This keeps the app running in the preview even without real env vars.
  */
-export function validateEnv(): Env {
+export function validateEnv(): Env | null {
   const result = envSchema.safeParse(process.env)
 
   if (!result.success) {
-    const errors = result.error.errors.map((err) => {
-      return `  ❌ ${err.path.join('.')}: ${err.message}`
-    })
+    const errors = result.error.errors.map((err) => `  MISSING  ${err.path.join('.')}: ${err.message}`)
 
-    console.error('\n🚨 ═══════════════════════════════════════════════════════════')
-    console.error('   CYBERSECURITY AGENT - ENVIRONMENT VALIDATION FAILED')
-    console.error('═══════════════════════════════════════════════════════════════')
-    console.error('\nMissing or invalid environment variables:\n')
-    console.error(errors.join('\n'))
-    console.error('\n📋 Required environment variables:')
-    console.error('   • DISCORD_TOKEN - Discord bot token')
-    console.error('   • DISCORD_PUBLIC_KEY - Discord application public key')
-    console.error('   • DISCORD_APPLICATION_ID - Discord application ID')
-    console.error('   • SLACK_BOT_TOKEN - Slack bot OAuth token (xoxb-...)')
-    console.error('   • SLACK_SIGNING_SECRET - Slack app signing secret')
-    console.error('   • OPENAI_API_KEY - OpenAI API key for AI analysis')
-    console.error('\n📋 Optional environment variables:')
-    console.error('   • REDIS_URL - Redis URL for production state persistence')
-    console.error('\n💡 Configure these in your Vercel Dashboard:')
-    console.error('   Settings → Environment Variables')
-    console.error('═══════════════════════════════════════════════════════════════\n')
+    console.warn('[CyberGuard] ================================================')
+    console.warn('[CyberGuard] ENVIRONMENT VALIDATION WARNING')
+    console.warn('[CyberGuard] ================================================')
+    console.warn('[CyberGuard] Missing or invalid environment variables:')
+    errors.forEach((e) => console.warn('[CyberGuard]' + e))
+    console.warn('[CyberGuard]')
+    console.warn('[CyberGuard] Required variables:')
+    console.warn('[CyberGuard]   DISCORD_TOKEN, DISCORD_PUBLIC_KEY, DISCORD_APPLICATION_ID')
+    console.warn('[CyberGuard]   SLACK_BOT_TOKEN, SLACK_SIGNING_SECRET')
+    console.warn('[CyberGuard]   OPENAI_API_KEY')
+    console.warn('[CyberGuard]')
+    console.warn('[CyberGuard] Optional: REDIS_URL')
+    console.warn('[CyberGuard]')
+    console.warn('[CyberGuard] Configure in Vercel Dashboard > Settings > Environment Variables')
+    console.warn('[CyberGuard] ================================================')
 
-    throw new Error('Environment validation failed. Check logs for details.')
+    return null
   }
 
-  console.log('✅ Environment variables validated successfully')
+  console.log('[CyberGuard] Environment variables validated successfully')
   return result.data
 }
 
 /**
- * Lazy-loaded environment config singleton
- * Only validates when first accessed
+ * Lazy-loaded environment config singleton.
+ * Returns null instead of throwing when vars are missing, so the Next.js
+ * module graph can be imported without crashing during preview/build.
  */
-let envConfig: Env | null = null
+let envConfig: Env | null | undefined = undefined
 
-export function getEnv(): Env {
-  if (!envConfig) {
+export function getEnv(): Env | null {
+  if (envConfig === undefined) {
     envConfig = validateEnv()
   }
   return envConfig
@@ -80,16 +78,13 @@ export function getEnv(): Env {
  * Check if a specific platform is configured
  */
 export function isPlatformConfigured(platform: 'discord' | 'slack'): boolean {
-  try {
-    const env = getEnv()
-    if (platform === 'discord') {
-      return !!(env.DISCORD_TOKEN && env.DISCORD_PUBLIC_KEY && env.DISCORD_APPLICATION_ID)
-    }
-    if (platform === 'slack') {
-      return !!(env.SLACK_BOT_TOKEN && env.SLACK_SIGNING_SECRET)
-    }
-    return false
-  } catch {
-    return false
+  const env = getEnv()
+  if (!env) return false
+  if (platform === 'discord') {
+    return !!(env.DISCORD_TOKEN && env.DISCORD_PUBLIC_KEY && env.DISCORD_APPLICATION_ID)
   }
+  if (platform === 'slack') {
+    return !!(env.SLACK_BOT_TOKEN && env.SLACK_SIGNING_SECRET)
+  }
+  return false
 }

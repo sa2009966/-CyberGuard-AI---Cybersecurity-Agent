@@ -20,6 +20,7 @@ export function createDiscordPlatformAdapter() {
 
   try {
     const env = getEnv()
+    if (!env) return null
 
     const config: DiscordAdapterConfig = {
       token: env.DISCORD_TOKEN,

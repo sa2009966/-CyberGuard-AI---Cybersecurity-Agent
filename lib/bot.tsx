@@ -59,14 +59,10 @@ if (slackAdapter) {
 
 // Determine state adapter
 function getStateAdapter() {
-  try {
-    const env = getEnv()
-    if (env.REDIS_URL) {
-      structuredLog('BOT_STARTED', { state: 'redis', url: 'configured' })
-      return createRedisState({ url: env.REDIS_URL })
-    }
-  } catch {
-    // Fall through to memory state
+  const env = getEnv()
+  if (env?.REDIS_URL) {
+    structuredLog('BOT_STARTED', { state: 'redis', url: 'configured' })
+    return createRedisState({ url: env.REDIS_URL })
   }
 
   structuredLog('BOT_STARTED', { state: 'memory', warning: 'Using in-memory state - data will not persist across restarts' })
