@@ -32,12 +32,11 @@ import { logWebhook, logError, structuredLog } from '@/src/core/logger'
 
 type Platform = keyof typeof bot.webhooks
 
-interface RouteContext {
-  params: Promise<{ platform: string }>
-}
+// Next.js 16: params is a Promise — no custom interface needed.
+type Params = Promise<{ platform: string }>
 
-export async function POST(request: Request, context: RouteContext) {
-  const { platform } = await context.params
+export async function POST(request: Request, { params }: { params: Params }) {
+  const { platform } = await params
 
   logWebhook(platform, 'POST', `/api/webhooks/${platform}`)
 
@@ -53,21 +52,18 @@ export async function POST(request: Request, context: RouteContext) {
 
   try {
     /**
-     * handler() returns the HTTP Response immediately (200 ACK to Discord/Slack).
-     * The `waitUntil` callback keeps the serverless function alive so that
-     * ChatSDK's internal AI calls and our after() work can finish safely.
+     * handler() flushes the HTTP 200 ACK immediately to Discord/Slack.
      *
-     * We wrap the task in after() so Next.js manages the extension of the
-     * function lifetime — this is the idiomatic pattern for Next.js 15/16.
+     * waitUntil receives the heavy work promise from ChatSDK. We schedule
+     * it with after() so Next.js extends the serverless function lifetime
+     * past the response flush — security analysis and Redis writes complete
+     * without blocking the platform acknowledgement.
      */
     return handler(request, {
-      waitUntil: (task: Promise<unknown>) =>
+      waitUntil: (task: Promise<unknown>) => {
         after(async () => {
           try {
             await task
-
-            // Post-response telemetry: emit a structured log so the
-            // riskLevel is visible in real-time in the Vercel log stream.
             structuredLog('WEBHOOK_PROCESSED', {
               platform,
               completedAt: new Date().toISOString(),
@@ -75,7 +71,8 @@ export async function POST(request: Request, context: RouteContext) {
           } catch (err) {
             logError('WEBHOOK_TASK_FAILED', err, { platform })
           }
-        }),
+        })
+      },
     })
   } catch (error) {
     logError('WEBHOOK_RECEIVED', error, { platform })
@@ -83,9 +80,9 @@ export async function POST(request: Request, context: RouteContext) {
   }
 }
 
-// Health-check endpoint for each platform
-export async function GET(_request: Request, context: RouteContext) {
-  const { platform } = await context.params
+// Health-check endpoint for each platform webhook
+export async function GET(_request: Request, { params }: { params: Params }) {
+  const { platform } = await params
   return Response.json({
     status: 'ok',
     platform,
