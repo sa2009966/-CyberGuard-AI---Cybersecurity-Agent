@@ -8,8 +8,12 @@
 export { createDiscordPlatformAdapter, discordFormatter, discordRateLimits } from './discord'
 export { createSlackPlatformAdapter, slackFormatter, slackRateLimits } from './slack'
 
+import { discordFormatter } from './discord'
+import { slackFormatter } from './slack'
+
 /**
- * Platform-agnostic message formatter
+ * Platform-agnostic message formatter interface.
+ * Both discordFormatter and slackFormatter satisfy this contract.
  */
 export interface UniversalFormatter {
   formatAlert(riskLevel: 'LOW' | 'MEDIUM' | 'HIGH', title: string, description: string): string
@@ -24,16 +28,13 @@ export interface UniversalFormatter {
 }
 
 /**
- * Get the appropriate formatter for a platform
+ * Returns the appropriate formatter for a given platform.
+ * Uses static ES imports — no require() to stay ESM-compatible.
  */
 export function getFormatter(platform: 'discord' | 'slack'): UniversalFormatter {
-  const { discordFormatter } = require('./discord')
-  const { slackFormatter } = require('./slack')
-
   const formatters: Record<string, UniversalFormatter> = {
     discord: discordFormatter,
     slack: slackFormatter,
   }
-
-  return formatters[platform] || formatters.discord
+  return formatters[platform] ?? discordFormatter
 }
