@@ -1,235 +1,251 @@
-'use client'
+/**
+ * app/page.tsx — SOC-Style Dashboard (Server Component)
+ *
+ * Reads live metrics from Upstash Redis at request time via getSocMetrics().
+ * The health-check button is extracted to a Client Component so that the
+ * rest of the page can remain a zero-JS Server Component.
+ */
 
-import { useState } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
+import { Shield, AlertTriangle, Activity, Users, Zap, MessageSquare, ExternalLink } from 'lucide-react'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import {
-  Shield,
-  MessageSquare,
-  Activity,
-  AlertTriangle,
-  CheckCircle,
-  Zap,
-  Github,
-  ExternalLink,
-} from 'lucide-react'
+import { getSocMetrics } from '@/src/core/sessionStore'
+import { isPlatformConfigured } from '@/src/config/env'
+import HealthCheckButton from './HealthCheckButton'
 
-export default function HomePage() {
-  const [testResult, setTestResult] = useState<{
-    status: string
-    platforms: Record<string, { configured: boolean; status: string }>
-  } | null>(null)
-  const [loading, setLoading] = useState(false)
+// ─── Server Component ─────────────────────────────────────────────────────────
 
-  const checkHealth = async () => {
-    setLoading(true)
-    try {
-      const res = await fetch('/api/health')
-      const data = await res.json()
-      setTestResult(data)
-    } catch (error) {
-      console.error('Health check failed:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
+export default async function HomePage() {
+  // Read live Redis metrics — happens server-side, no client bundle cost
+  const metrics = await getSocMetrics().catch(() => ({
+    threatsBlocked: 0,
+    activeSessions: 0,
+  }))
+
+  const discordReady = isPlatformConfigured('discord')
+  const slackReady   = isPlatformConfigured('slack')
+
+  const statCards = [
+    {
+      label: 'Threats Blocked',
+      value: metrics.threatsBlocked,
+      icon: AlertTriangle,
+      accent: 'text-red-400',
+      bg: 'bg-red-500/10',
+      border: 'border-red-500/20',
+    },
+    {
+      label: 'Active Sessions',
+      value: metrics.activeSessions,
+      icon: Users,
+      accent: 'text-cyan-400',
+      bg: 'bg-cyan-500/10',
+      border: 'border-cyan-500/20',
+    },
+    {
+      label: 'Platforms Online',
+      value: [discordReady, slackReady].filter(Boolean).length,
+      icon: Activity,
+      accent: 'text-emerald-400',
+      bg: 'bg-emerald-500/10',
+      border: 'border-emerald-500/20',
+    },
+  ]
+
+  const platforms = [
+    {
+      name: 'Discord',
+      webhook: '/api/webhooks/discord',
+      configured: discordReady,
+    },
+    {
+      name: 'Slack',
+      webhook: '/api/webhooks/slack',
+      configured: slackReady,
+    },
+  ]
+
+  const endpoints = [
+    { path: '/api/webhooks/discord', label: 'Discord Webhook' },
+    { path: '/api/webhooks/slack',   label: 'Slack Webhook'   },
+    { path: '/api/health',           label: 'Health Check'    },
+  ]
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
-      {/* Hero Section */}
-      <header className="relative overflow-hidden">
-        <div className="absolute inset-0 bg-[url('/grid.svg')] bg-center opacity-10" />
-        <div className="relative mx-auto max-w-7xl px-6 py-24 sm:py-32 lg:px-8">
-          <div className="mx-auto max-w-2xl text-center">
-            <div className="mb-8 flex justify-center">
-              <div className="relative">
-                <div className="absolute inset-0 animate-pulse rounded-full bg-emerald-500/20 blur-xl" />
-                <div className="relative rounded-full bg-gradient-to-br from-emerald-500 to-cyan-500 p-4">
-                  <Shield className="h-12 w-12 text-white" />
-                </div>
-              </div>
+    <div className="min-h-screen bg-slate-950 font-mono text-slate-100">
+
+      {/* ── Top bar ──────────────────────────────────────────────────── */}
+      <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+          <div className="flex items-center gap-3">
+            <div className="rounded-lg bg-emerald-500/15 p-2">
+              <Shield className="h-5 w-5 text-emerald-400" />
             </div>
-            <h1 className="text-4xl font-bold tracking-tight text-white sm:text-6xl">
-              CyberGuard{' '}
-              <span className="bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
-                AI
-              </span>
-            </h1>
-            <p className="mt-6 text-lg leading-8 text-slate-400">
-              AI-powered cybersecurity assistant for Discord &amp; Slack. Analyzes messages in
-              real-time to detect phishing, malware, and security threats.
-            </p>
-            <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
-              <Badge variant="secondary" className="px-3 py-1 text-sm">
-                <Zap className="mr-1 h-3 w-3" /> Real-time Analysis
-              </Badge>
-              <Badge variant="secondary" className="px-3 py-1 text-sm">
-                <MessageSquare className="mr-1 h-3 w-3" /> Multi-Platform
-              </Badge>
-              <Badge variant="secondary" className="px-3 py-1 text-sm">
-                <Activity className="mr-1 h-3 w-3" /> Risk Scoring
-              </Badge>
+            <div>
+              <p className="text-xs text-slate-500 uppercase tracking-widest">Security Operations Center</p>
+              <h1 className="text-sm font-semibold text-white leading-none mt-0.5">CyberGuard AI</h1>
             </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+            </span>
+            <span className="text-xs text-emerald-400 uppercase tracking-widest">Live</span>
           </div>
         </div>
       </header>
 
-      {/* Features Grid */}
-      <section className="mx-auto max-w-7xl px-6 py-16 lg:px-8">
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          <Card className="border-slate-800 bg-slate-900/50 backdrop-blur">
-            <CardHeader>
-              <div className="mb-2 w-fit rounded-lg bg-red-500/10 p-2">
-                <AlertTriangle className="h-5 w-5 text-red-500" />
-              </div>
-              <CardTitle className="text-white">Threat Detection</CardTitle>
-              <CardDescription>
-                Identifies phishing, malware, credential harvesting, and injection attacks in
-                real-time
-              </CardDescription>
-            </CardHeader>
-          </Card>
+      <main className="mx-auto max-w-7xl space-y-10 px-6 py-10">
 
-          <Card className="border-slate-800 bg-slate-900/50 backdrop-blur">
-            <CardHeader>
-              <div className="mb-2 w-fit rounded-lg bg-emerald-500/10 p-2">
-                <Activity className="h-5 w-5 text-emerald-500" />
-              </div>
-              <CardTitle className="text-white">Risk Scoring</CardTitle>
-              <CardDescription>
-                Assigns risk levels (LOW/MEDIUM/HIGH) with scores from 0-100 based on detected
-                indicators
-              </CardDescription>
-            </CardHeader>
-          </Card>
-
-          <Card className="border-slate-800 bg-slate-900/50 backdrop-blur">
-            <CardHeader>
-              <div className="mb-2 w-fit rounded-lg bg-cyan-500/10 p-2">
-                <MessageSquare className="h-5 w-5 text-cyan-500" />
-              </div>
-              <CardTitle className="text-white">AI Responses</CardTitle>
-              <CardDescription>
-                Uses GPT-4 to provide contextual security guidance and actionable recommendations
-              </CardDescription>
-            </CardHeader>
-          </Card>
-        </div>
-      </section>
-
-      {/* Health Check Section */}
-      <section className="mx-auto max-w-3xl px-6 py-16 lg:px-8">
-        <Card className="border-slate-800 bg-slate-900/50 backdrop-blur">
-          <CardHeader className="text-center">
-            <CardTitle className="text-white">System Status</CardTitle>
-            <CardDescription>Check if the bot is properly configured and running</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="flex justify-center">
-              <Button
-                onClick={checkHealth}
-                disabled={loading}
-                className="bg-emerald-600 hover:bg-emerald-700"
-              >
-                {loading ? 'Checking...' : 'Check Health'}
-              </Button>
-            </div>
-
-            {testResult && (
-              <div className="space-y-4 rounded-lg border border-slate-700 bg-slate-800/50 p-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Status</span>
-                  <Badge
-                    variant={testResult.status === 'healthy' ? 'default' : 'destructive'}
-                    className={
-                      testResult.status === 'healthy'
-                        ? 'bg-emerald-500/20 text-emerald-400'
-                        : ''
-                    }
-                  >
-                    {testResult.status === 'healthy' ? (
-                      <CheckCircle className="mr-1 h-3 w-3" />
-                    ) : (
-                      <AlertTriangle className="mr-1 h-3 w-3" />
-                    )}
-                    {testResult.status.toUpperCase()}
-                  </Badge>
-                </div>
-
-                <div className="space-y-2">
-                  <span className="text-sm text-slate-400">Platforms</span>
-                  <div className="grid gap-2">
-                    {Object.entries(testResult.platforms).map(([platform, info]) => (
-                      <div
-                        key={platform}
-                        className="flex items-center justify-between rounded bg-slate-900 px-3 py-2"
-                      >
-                        <span className="font-mono text-sm capitalize text-white">{platform}</span>
-                        <Badge
-                          variant={info.configured ? 'default' : 'secondary'}
-                          className={
-                            info.configured
-                              ? 'bg-emerald-500/20 text-emerald-400'
-                              : 'bg-slate-700 text-slate-400'
-                          }
-                        >
-                          {info.status}
-                        </Badge>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </section>
-
-      {/* Endpoints Section */}
-      <section className="mx-auto max-w-3xl px-6 py-16 lg:px-8">
-        <Card className="border-slate-800 bg-slate-900/50 backdrop-blur">
-          <CardHeader>
-            <CardTitle className="text-white">API Endpoints</CardTitle>
-            <CardDescription>Webhook URLs for platform integration</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {[
-              { path: '/api/webhooks/discord', label: 'Discord Webhook' },
-              { path: '/api/webhooks/slack', label: 'Slack Webhook' },
-              { path: '/api/health', label: 'Health Check' },
-            ].map((endpoint) => (
+        {/* ── KPI strip ────────────────────────────────────────────────── */}
+        <section aria-label="Key metrics">
+          <div className="grid gap-4 sm:grid-cols-3">
+            {statCards.map(({ label, value, icon: Icon, accent, bg, border }) => (
               <div
-                key={endpoint.path}
-                className="flex items-center justify-between rounded-lg border border-slate-700 bg-slate-800/50 px-4 py-3"
+                key={label}
+                className={`rounded-xl border ${border} ${bg} p-6 flex items-center gap-4`}
               >
-                <div>
-                  <p className="text-sm text-slate-400">{endpoint.label}</p>
-                  <code className="font-mono text-sm text-emerald-400">{endpoint.path}</code>
+                <div className={`rounded-lg bg-slate-900/60 p-3`}>
+                  <Icon className={`h-6 w-6 ${accent}`} />
                 </div>
-                <ExternalLink className="h-4 w-4 text-slate-500" />
+                <div>
+                  <p className="text-xs text-slate-500 uppercase tracking-widest">{label}</p>
+                  <p className={`text-3xl font-bold ${accent} tabular-nums`}>
+                    {value.toLocaleString()}
+                  </p>
+                </div>
               </div>
             ))}
-          </CardContent>
-        </Card>
-      </section>
-
-      {/* Footer */}
-      <footer className="border-t border-slate-800 py-12">
-        <div className="mx-auto max-w-7xl px-6 lg:px-8">
-          <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
-            <div className="flex items-center gap-2">
-              <Shield className="h-5 w-5 text-emerald-500" />
-              <span className="text-slate-400">CyberGuard AI</span>
-            </div>
-            <div className="flex items-center gap-4 text-sm text-slate-500">
-              <span>Built with ChatSDK</span>
-              <span>•</span>
-              <a href="#" className="flex items-center gap-1 hover:text-white">
-                <Github className="h-4 w-4" /> Source
-              </a>
-            </div>
           </div>
+        </section>
+
+        {/* ── Platform status + Health check ───────────────────────────── */}
+        <section className="grid gap-6 lg:grid-cols-2">
+
+          {/* Platform status panel */}
+          <Card className="border-slate-800 bg-slate-900/60">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold uppercase tracking-widest text-slate-400">
+                Platform Status
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {platforms.map(({ name, webhook, configured }) => (
+                <div
+                  key={name}
+                  className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/60 px-4 py-3"
+                >
+                  <div className="flex items-center gap-3">
+                    <span
+                      className={`h-2 w-2 rounded-full ${configured ? 'bg-emerald-400' : 'bg-slate-600'}`}
+                    />
+                    <div>
+                      <p className="text-sm font-medium text-white">{name}</p>
+                      <code className="text-xs text-slate-500">{webhook}</code>
+                    </div>
+                  </div>
+                  <Badge
+                    className={
+                      configured
+                        ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                        : 'border-slate-700 bg-slate-800 text-slate-500'
+                    }
+                    variant="outline"
+                  >
+                    {configured ? 'ACTIVE' : 'NOT CONFIGURED'}
+                  </Badge>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          {/* Health check (client island) */}
+          <Card className="border-slate-800 bg-slate-900/60">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold uppercase tracking-widest text-slate-400">
+                System Health
+              </CardTitle>
+              <CardDescription className="text-slate-500 text-xs">
+                Polls /api/health for live platform state
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <HealthCheckButton />
+            </CardContent>
+          </Card>
+        </section>
+
+        {/* ── Threat categories reference ───────────────────────────────── */}
+        <section>
+          <Card className="border-slate-800 bg-slate-900/60">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold uppercase tracking-widest text-slate-400">
+                Detection Coverage
+              </CardTitle>
+              <CardDescription className="text-slate-500 text-xs">
+                Categories analyzed on every message
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {[
+                  { label: 'Phishing',        icon: AlertTriangle, color: 'text-red-400',    bg: 'bg-red-500/10'    },
+                  { label: 'Malware / C2',    icon: Zap,           color: 'text-orange-400', bg: 'bg-orange-500/10' },
+                  { label: 'Credential Theft',icon: Shield,        color: 'text-yellow-400', bg: 'bg-yellow-500/10' },
+                  { label: 'SQL / XSS Inject',icon: Activity,      color: 'text-purple-400', bg: 'bg-purple-500/10' },
+                  { label: 'Data Exfil',      icon: ExternalLink,  color: 'text-pink-400',   bg: 'bg-pink-500/10'   },
+                  { label: 'Reconnaissance',  icon: Users,         color: 'text-cyan-400',   bg: 'bg-cyan-500/10'   },
+                  { label: 'Suspicious URLs', icon: ExternalLink,  color: 'text-blue-400',   bg: 'bg-blue-500/10'   },
+                  { label: 'AI Chat Analysis',icon: MessageSquare, color: 'text-emerald-400',bg: 'bg-emerald-500/10'},
+                ].map(({ label, icon: Icon, color, bg }) => (
+                  <div
+                    key={label}
+                    className={`flex items-center gap-3 rounded-lg border border-slate-800 ${bg} px-3 py-2.5`}
+                  >
+                    <Icon className={`h-4 w-4 shrink-0 ${color}`} />
+                    <span className={`text-xs font-medium ${color}`}>{label}</span>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </section>
+
+        {/* ── API endpoints reference ───────────────────────────────────── */}
+        <section>
+          <Card className="border-slate-800 bg-slate-900/60">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold uppercase tracking-widest text-slate-400">
+                Webhook Endpoints
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {endpoints.map(({ path, label }) => (
+                <div
+                  key={path}
+                  className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/60 px-4 py-3"
+                >
+                  <div>
+                    <p className="text-xs text-slate-500">{label}</p>
+                    <code className="text-sm text-emerald-400">{path}</code>
+                  </div>
+                  <ExternalLink className="h-4 w-4 text-slate-600" />
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </section>
+      </main>
+
+      {/* ── Footer ───────────────────────────────────────────────────── */}
+      <footer className="border-t border-slate-800 py-8">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 text-xs text-slate-600">
+          <div className="flex items-center gap-2">
+            <Shield className="h-4 w-4 text-emerald-600" />
+            <span>CyberGuard AI — built with ChatSDK + Upstash Redis</span>
+          </div>
+          <span>Metrics refresh on every page load</span>
         </div>
       </footer>
     </div>

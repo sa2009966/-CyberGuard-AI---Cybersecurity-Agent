@@ -1,8 +1,11 @@
 import { isPlatformConfigured } from '@/src/config/env'
-import { sessionStore } from '@/src/core/sessionStore'
+import { getSocMetrics } from '@/src/core/sessionStore'
 
 export async function GET() {
-  const sessions = await sessionStore.getAll()
+  const metrics = await getSocMetrics().catch(() => ({
+    threatsBlocked: 0,
+    activeSessions: 0,
+  }))
 
   const health = {
     status: 'healthy',
@@ -19,14 +22,14 @@ export async function GET() {
         status: isPlatformConfigured('slack') ? 'active' : 'not_configured',
       },
     },
-    sessions: {
-      active: sessions.length,
-      flaggedForReview: sessions.filter((s) => s.riskProfile.flaggedForReview).length,
+    metrics: {
+      threatsBlocked: metrics.threatsBlocked,
+      activeSessions: metrics.activeSessions,
     },
     endpoints: {
       discordWebhook: '/api/webhooks/discord',
-      slackWebhook: '/api/webhooks/slack',
-      health: '/api/health',
+      slackWebhook:   '/api/webhooks/slack',
+      health:         '/api/health',
     },
   }
 
