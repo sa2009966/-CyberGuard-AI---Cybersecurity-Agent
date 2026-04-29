@@ -20,7 +20,11 @@ export type LogEvent =
   | 'PLATFORM_ERROR'
   | 'ENV_VALIDATED'
   | 'WEBHOOK_RECEIVED'
+  | 'WEBHOOK_PROCESSED'
+  | 'WEBHOOK_TASK_FAILED'
   | 'RESPONSE_SENT'
+  | 'ADAPTER_INIT_DISCORD'
+  | 'ADAPTER_INIT_SLACK'
 
 interface LogEntry {
   timestamp: string
