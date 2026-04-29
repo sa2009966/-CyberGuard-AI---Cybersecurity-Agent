@@ -5,7 +5,8 @@ import { createRedisState } from '@chat-adapter/state-redis'
 import { streamText } from 'ai'
 
 import { getEnv } from '../src/config/env'
-import { createDiscordPlatformAdapter } from '../src/adapters/discord'
+// Discord adapter removed: discord.js has native dependencies (zlib-sync) that cannot be bundled in serverless
+// Only Slack adapter is active in this deployment
 import { createSlackPlatformAdapter } from '../src/adapters/slack'
 import {
   analyzeMessage,

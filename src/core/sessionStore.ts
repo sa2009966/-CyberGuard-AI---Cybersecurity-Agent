@@ -293,4 +293,8 @@ export const sessionStore = {
     // the SOC dashboard should use getSocMetrics() instead.
     return []
   },
+  get: async (userId: string, platform: string): Promise<UserSession | null> => {
+    // Delegate to the main getUserSession function
+    return getUserSession(userId, platform)
+  },
 }
